@@ -30,9 +30,18 @@ jobs:
           EXCEL_URL: ${{ secrets.EXCEL_URL }}
         run: |
           test -n "$EXCEL_URL" || { echo "Secret EXCEL_URL is missing"; exit 1; }
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+          try() { rm -f T-Report.xlsx; curl -sSL -A "$UA" -o T-Report.xlsx -w "http=%{http_code} " "$1" || true; head -c 2 T-Report.xlsx 2>/dev/null | grep -q PK; }
           ENC=$(printf '%s' "$EXCEL_URL" | base64 -w0 | tr '/+' '_-' | tr -d '=')
-          curl -fsSL -o T-Report.xlsx "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content"
-          head -c 2 T-Report.xlsx | grep -q PK || { echo "Downloaded file is not an xlsx"; exit 1; }
+          FINAL=$(curl -sSL -A "$UA" -o /dev/null -w '%{url_effective}' "$EXCEL_URL" || true)
+          case "$EXCEL_URL" in *\?*) SEP='&';; *) SEP='?';; esac
+          case "$FINAL" in *\?*) SEP2='&';; *) SEP2='?';; esac
+          echo "link host: $(echo "$EXCEL_URL" | cut -d/ -f3) -> $(echo "$FINAL" | cut -d/ -f3)"
+          try "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content" \
+            || try "${EXCEL_URL}${SEP}download=1" \
+            || try "${FINAL}${SEP2}download=1" \
+            || { echo; echo "All download methods failed"; exit 1; }
+          echo "download ok"
       - name: Build data.js
         run: python build_data.py T-Report.xlsx
       - name: Collect site files
