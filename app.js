@@ -33,7 +33,7 @@ function flt(o) {
 }
 const CAT_OPTS = [['all', 'All matches'], ['comp', 'Competitive (all leagues)'], ['league', 'League – any level']]
   .concat(LEVELS.map(l => ['league:' + l, l + '° League']))
-  .concat([['winter', 'Winter League'], ['playoff', 'League playoffs'], ['friendly', 'Friendly (no league)']]);
+  .concat([['winter', 'Winter League'], ['nitra', 'Nitra League'], ['friendly', 'Friendly (no league)']]);
 
 /* ---------------------------------------------------------------- aggregation */
 function agg(L) {
@@ -75,7 +75,7 @@ function streaks(L) {
 }
 const scoreStr = m => m.sets.map(s => s[0] + '-' + s[1] + (s[2] != null ? '(' + s[2] + ')' : '')).join(' ') + (m.ret ? ' ret.' : '');
 const compTag = m => {
-  const c = { league: 'lg', winter: 'wn', playoff: 'po', friendly: 'fr' }[m.cat];
+  const c = { league: 'lg', winter: 'wn', nitra: 'po', friendly: 'fr' }[m.cat];
   return '<span class="tag ' + c + '">' + esc(m.league || 'Friendly') + '</span>';
 };
 const woTag = m => m.wo ? '<span class="tag wo">Walkover</span>' : '';
@@ -165,7 +165,7 @@ function matchTable(L, o) {
 function compRows(L) {
   const groups = [];
   LEVELS.forEach(l => groups.push([l + '° League', L.filter(m => m.cat === 'league' && m.ll === l), 'lg']));
-  groups.push(['Winter League', L.filter(m => m.cat === 'winter'), 'wn'], ['League playoffs', L.filter(m => m.cat === 'playoff'), 'po'], ['Friendly (no league)', L.filter(m => m.cat === 'friendly'), 'fr']);
+  groups.push(['Winter League', L.filter(m => m.cat === 'winter'), 'wn'], ['Nitra League', L.filter(m => m.cat === 'nitra'), 'po'], ['Friendly (no league)', L.filter(m => m.cat === 'friendly'), 'fr']);
   const rows = groups.filter(g => g[1].length).map(g => {
     const a = agg(g[1]);
     return '<tr>' + td('<span class="tag ' + g[2] + '">' + g[0] + '</span>') + td(a.p, 1) + td('<span class="win">' + a.w + '</span>', 1) + td('<span class="loss">' + a.l + '</span>', 1) + td(pct(a.w, a.p), 1) + td(wlBar(a.w, a.l)) +
@@ -269,13 +269,13 @@ function pageStats() {
     kpi(a.straightW, 'Won in straight sets', pct(a.straightW, a.w) + ' of wins') + kpi(a.behindW, 'Won after losing a set') + kpi(a.straightL, 'Lost in straight sets') + kpi(a.aheadL, 'Lost after winning a set') +
     kpi(a.s3w + '–' + a.s3l, 'Three-set matches', pct(a.s3w, a.s3w + a.s3l) + ' won') + kpi(a.tbw + '–' + a.tbl, 'Tie-break sets (7-6)', pct(a.tbw, a.tbw + a.tbl) + ' won') + kpi(a.stw + '–' + a.stl, 'Match tie-breaks (10 pts)') + kpi(a.bw + '–' + a.bl, '6-0 sets won – lost', 'bagels') + '</div>' +
     '<h2>Per year</h2>' + yearRows(flt({ year: 'all' })) +
-    '<h2>Per competition <small>league level, Winter League, playoffs, friendly</small></h2>' + compRows(flt({ cat: 'all' })) +
+    '<h2>Per competition <small>league level, Winter League, Nitra League, friendly</small></h2>' + compRows(flt({ cat: 'all' })) +
     '<h2>Per league season</h2>' + table([{ t: 'Season' }, { t: 'Period' }, { t: 'P', n: 1 }, { t: 'W', n: 1 }, { t: 'L', n: 1 }, { t: 'Win %', n: 1 }, { t: '' }, { t: 'Sets', n: 1 }, { t: 'Games', n: 1 }, { t: 'WO', n: 1 }], sRows) +
     '<div class="grid g2"><div><h2>Win rate by opponent level</h2><div class="card">' + barRows(lvl) + '</div></div><div><h2>Win rate by my performance rating</h2><div class="card">' + barRows(perf) + '</div></div></div>' +
     '<div class="grid g2"><div><h2>Results by month of the year</h2><div class="card">' + stackChart(months) + '</div></div><div><h2>Areas to improve <small>noted after the match</small></h2><div class="card">' +
     (impRows.length ? barRows(impRows.map(k => ({ label: esc(k), v: imp[k].w + imp[k].l, right: imp[k].w + imp[k].l + ' (' + imp[k].w + 'W ' + imp[k].l + 'L)', color: '#4f9dff' })), { max: impMax }) : '<div class="empty">No notes</div>') + '</div></div></div>' +
     '<div class="grid g2"><div><h2>Walkovers <small>separate statistic, already included above</small></h2><div class="card"><p>' + wo.length + ' walkover matches in this filter: <b class="win">' + woa.w + ' W</b> · <b class="loss">' + woa.l + ' L</b></p><p class="note">' +
-    ['league', 'winter', 'playoff', 'friendly'].map(c => { const x = wo.filter(m => m.cat === c); return x.length ? { league: 'League', winter: 'Winter League', playoff: 'Playoffs', friendly: 'Friendly' }[c] + ': ' + x.length : ''; }).filter(Boolean).join(' · ') + '</p>' +
+    ['league', 'winter', 'nitra', 'friendly'].map(c => { const x = wo.filter(m => m.cat === c); return x.length ? { league: 'League', winter: 'Winter League', nitra: 'Nitra League', friendly: 'Friendly' }[c] + ': ' + x.length : ''; }).filter(Boolean).join(' · ') + '</p>' +
     matchTable(wo.slice().reverse().slice(0, 12)) + '</div></div>' +
     '<div><h2>Equipment & conditions</h2>' + table([{ t: 'Racquet' }, { t: 'P', n: 1 }, { t: 'W', n: 1 }, { t: 'L', n: 1 }, { t: 'Win %', n: 1 }, { t: '' }], rq) +
     '<div class="card" style="margin-top:12px"><p>Hard court (tagged): <b>' + surf.w + 'W ' + surf.l + 'L</b> in ' + surf.p + ' matches.</p>' +
@@ -309,11 +309,11 @@ function pageRanking() {
 }
 
 /* ---------------------------------------------------------------- leagues */
-const LTYPES = [['all', 'All leagues']].concat(LEVELS.map(l => ['league:' + l, l + '° League'])).concat([['winter', 'Winter League'], ['playoff', 'Playoffs']]);
+const LTYPES = [['all', 'All leagues']].concat(LEVELS.map(l => ['league:' + l, l + '° League'])).concat([['winter', 'Winter League'], ['nitra', 'Nitra League']]);
 const COMP = ALL.filter(m => m.cat !== 'friendly');
 const LYEARS = [...new Set(COMP.map(m => m.d.slice(0, 4)))].sort();
 function leagueFlt(type, year) {
-  return COMP.filter(m => (type === 'all' || (type === 'winter' ? m.cat === 'winter' : type === 'playoff' ? m.cat === 'playoff' : m.cat === 'league' && m.ll === +type.split(':')[1])) &&
+  return COMP.filter(m => (type === 'all' || (type === 'winter' ? m.cat === 'winter' : type === 'nitra' ? m.cat === 'nitra' : m.cat === 'league' && m.ll === +type.split(':')[1])) &&
     (year === 'all' || m.d.slice(0, 4) === year));
 }
 function leaguesBody() {

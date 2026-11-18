@@ -57,9 +57,15 @@ def parse_comment(c, date):
         dur = m.group(1)
         rest = re.sub(r'\(?\s*h?\s*-?\s*' + re.escape(dur) + r'\s*(hr|h)?\s*\)?', '', rest).strip(' -')
     out = dict(cat='friendly', league=None, ll=None, season=None, note='', surface=None, stage=None)
+    # QF / SF / F are only memory notes: drop them, keep the league
+    rest = re.sub(r'(?i)^(QF|SF|F)\s*-\s*', '', rest).strip()
+    nm = re.search(r"(?i)nitra", rest)
     m = re.match(r"^(\d)\*?\s*in the League", rest)
     m2 = re.match(r"^(\d)\S?\s*League(?:\s*'(\d\d))?", rest)
-    if m:
+    if nm or re.match(r'(?i)^league$', rest):
+        yy = re.search(r"'(\d\d)", rest)
+        out.update(cat='nitra', season=('20' + yy.group(1)) if yy else None)
+    elif m:
         out.update(cat='league', ll=int(m.group(1)), season=str(date.year))
     elif m2:
         yy = int(m2.group(2)) + 2000 if m2.group(2) else date.year
@@ -67,8 +73,6 @@ def parse_comment(c, date):
     elif re.match(r'(?i)^winter league', rest):
         start = date.year if date.month >= 9 else date.year - 1
         out.update(cat='winter', season='%d-%02d' % (start, (start + 1) % 100))
-    elif re.match(r'(?i)^(QF|SF|F)-League', rest):
-        out.update(cat='playoff', stage=rest.split('-')[0].upper(), season=str(date.year))
     else:
         out['note'] = rest
         if rest.lower() == 'hard':
@@ -77,8 +81,8 @@ def parse_comment(c, date):
         out['league'] = "%d° League '%s" % (out['ll'], out['season'][2:])
     elif out['cat'] == 'winter':
         out['league'] = 'Winter League ' + out['season']
-    elif out['cat'] == 'playoff':
-        out['league'] = 'League playoffs'
+    elif out['cat'] == 'nitra':
+        out['league'] = 'Nitra League' + (" '" + out['season'][2:] if out['season'] else '')
     out['wo'] = wo
     out['dur'] = dur
     return out
