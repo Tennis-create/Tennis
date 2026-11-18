@@ -30,6 +30,11 @@ jobs:
           EXCEL_URL: ${{ secrets.EXCEL_URL }}
         run: |
           test -n "$EXCEL_URL" || { echo "Secret EXCEL_URL is missing"; exit 1; }
+          # accept a plain link or the whole <iframe ...> embed code
+          SRC=$(printf '%s' "$EXCEL_URL" | grep -o 'src="[^"]*"' | head -1 | sed 's/^src="//; s/"$//; s/&amp;/\&/g')
+          [ -n "$SRC" ] && EXCEL_URL="$SRC"
+          EXCEL_URL=$(printf '%s' "$EXCEL_URL" | tr -d '[:space:]')
+          DL=$(printf '%s' "$EXCEL_URL" | sed 's#/embed?#/download?#')
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
           try() { rm -f T-Report.xlsx; curl -sSL -A "$UA" -o T-Report.xlsx -w "http=%{http_code} " "$1" || true; head -c 2 T-Report.xlsx 2>/dev/null | grep -q PK; }
           ENC=$(printf '%s' "$EXCEL_URL" | base64 -w0 | tr '/+' '_-' | tr -d '=')
@@ -37,7 +42,8 @@ jobs:
           case "$EXCEL_URL" in *\?*) SEP='&';; *) SEP='?';; esac
           case "$FINAL" in *\?*) SEP2='&';; *) SEP2='?';; esac
           echo "link host: $(echo "$EXCEL_URL" | cut -d/ -f3) -> $(echo "$FINAL" | cut -d/ -f3)"
-          try "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content" \
+          try "$DL" \
+            || try "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content" \
             || try "${EXCEL_URL}${SEP}download=1" \
             || try "${FINAL}${SEP2}download=1" \
             || { echo; echo "All download methods failed"; exit 1; }
