@@ -169,7 +169,7 @@ print('players', len(players), 'rank history', len(history))
 
 # ---------------------------------------------------------------- yearly club rankings
 rankings = {}
-for y in ('2022', '2023', '2024', '2025', '2026', '2027'):
+for y in sorted(n for n in wb.sheetnames if re.fullmatch(r'20\d\d', n.strip())):
     w = wb[y]
     hdr = [clean(c) for c in next(w.iter_rows(min_row=1, max_row=1, values_only=True))]
     hi = next(i for i, h in enumerate(hdr) if h.lower().startswith('hr'))
