@@ -309,37 +309,82 @@ function pageRanking() {
 }
 
 /* ---------------------------------------------------------------- leagues */
-function pageLeagues() {
-  const L = flt({ cat: 'comp', year: 'all' }), by = {};
-  L.forEach(m => (by[m.league] = by[m.league] || []).push(m));
-  const keys = Object.keys(by).sort((x, y) => by[y][0].d < by[x][0].d ? -1 : 1);
-  const cards = keys.map(k => {
-    const l = by[k], a = agg(l), mp = oppMap(l);
-    return '<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">' + '<div>' + compTag(l[0]) + '<div class="note">' + fd(l[0].d) + ' → ' + fd(l[l.length - 1].d) + '</div></div>' +
-      '<div style="text-align:right"><b style="font-size:20px">' + a.w + '–' + a.l + '</b> <span class="muted">' + pct(a.w, a.p) + '</span></div></div>' + wlBar(a.w, a.l) +
-      '<p class="note">Sets ' + a.sw + '–' + a.sl + ' · Games ' + a.gw + '–' + a.gl + ' · Avg opp ' + f1(a.al) + ' · Avg perf ' + f1(a.ap) + (a.woW + a.woL ? ' · <span class="wo">Walkovers ' + a.woW + 'W ' + a.woL + 'L</span>' : '') + '</p>' +
-      '<div class="chips">' + l.map(m => '<span class="chip ' + m.res + '" title="' + esc(fd(m.d) + ' ' + scoreStr(m)) + '">' + esc(m.vs) + (m.wo ? ' <span class="wo">WO</span>' : '') + '</span>').join('') + '</div></div>';
+const LTYPES = [['all', 'All leagues']].concat(LEVELS.map(l => ['league:' + l, l + '° League'])).concat([['winter', 'Winter League'], ['playoff', 'Playoffs']]);
+const COMP = ALL.filter(m => m.cat !== 'friendly');
+const LYEARS = [...new Set(COMP.map(m => m.d.slice(0, 4)))].sort();
+function leagueFlt(type, year) {
+  return COMP.filter(m => (type === 'all' || (type === 'winter' ? m.cat === 'winter' : type === 'playoff' ? m.cat === 'playoff' : m.cat === 'league' && m.ll === +type.split(':')[1])) &&
+    (year === 'all' || m.d.slice(0, 4) === year));
+}
+function leaguesBody() {
+  const L = leagueFlt(state.lt, state.ly), a = agg(L), st = streaks(L);
+  const label = (LTYPES.find(t => t[0] === state.lt) || [0, ''])[1] + (state.ly === 'all' ? ' · all years' : ' · ' + state.ly);
+  if (!L.length) return '<div class="card empty">No league matches for ' + esc(label) + '</div>';
+  // seasons
+  const by = {}; L.forEach(m => (by[m.league] = by[m.league] || []).push(m));
+  const sRows = Object.keys(by).sort((x, y) => by[x][0].d < by[y][0].d ? 1 : -1).map(k => {
+    const l = by[k], x = agg(l);
+    return '<tr>' + td(compTag(l[0])) + td(fd(l[0].d) + ' → ' + fd(l[l.length - 1].d)) + td(x.p, 1) + td('<span class="win">' + x.w + '</span>', 1) + td('<span class="loss">' + x.l + '</span>', 1) + td(pct(x.w, x.p), 1) + td(wlBar(x.w, x.l)) +
+      td(x.sw + '-' + x.sl, 1) + td(x.gw + '-' + x.gl, 1) + td(f1(x.al), 1) + td(f1(x.ap), 1) + td(x.woW + x.woL ? '<span class="wo">' + (x.woW + x.woL) + '</span>' : '–', 1) + '</tr>';
   });
-  const ladder = LEVELS.map(lv => { const x = agg(L.filter(m => m.cat === 'league' && m.ll === lv)); return '<tr>' + td('<span class="tag lg">' + lv + '° League</span>') + td(x.p, 1) + td('<span class="win">' + x.w + '</span>', 1) + td('<span class="loss">' + x.l + '</span>', 1) + td(pct(x.w, x.p), 1) + td(wlBar(x.w, x.l)) + '</tr>'; });
-  const wl = D.events.filter(e => /winter/i.test(e.name));
-  return '<h1>Leagues</h1><p class="sub">Every league season, Winter League and playoff block. Walkovers are included and tagged.</p>' +
-    '<div class="grid g2"><div><h2>League ladder <small>all seasons by level</small></h2>' + table([{ t: 'Level' }, { t: 'P', n: 1 }, { t: 'W', n: 1 }, { t: 'L', n: 1 }, { t: 'Win %', n: 1 }, { t: '' }], ladder) + '</div>' +
-    '<div><h2>Winter League standings</h2>' + (wl.length ? wl.map(eventCard).join('') : '<div class="empty">No standings</div>') + '</div></div>' +
-    '<h2>Seasons <small>newest first</small></h2><div class="grid g2">' + cards.join('') + '</div>';
+  // opponents in this selection
+  const mp = oppMap(L);
+  const oRows = Object.keys(mp).sort((x, y) => mp[y].length - mp[x].length || x.localeCompare(y)).map(n => {
+    const x = agg(mp[n]);
+    return '<tr>' + td(playerLink(n)) + td(x.p, 1) + td('<span class="win">' + x.w + '</span>', 1) + td('<span class="loss">' + x.l + '</span>', 1) + td(pct(x.w, x.p), 1) + td(wlBar(x.w, x.l)) + td(x.sw + '-' + x.sl, 1) + td('<div class="form">' + mp[n].map(m => '<span class="' + m.res + '" title="' + esc(fd(m.d) + ' ' + scoreStr(m)) + '"></span>').join('') + '</div>') + '</tr>';
+  });
+  return '<div class="grid kpis">' + kpi(a.p, 'Matches', esc(label)) + kpi(a.w, 'Wins', '', 'win') + kpi(a.l, 'Losses', '', 'loss') + kpi(pct(a.w, a.p), 'Win rate') +
+    kpi(a.sw + '–' + a.sl, 'Sets', pct(a.sw, a.sw + a.sl) + ' won') + kpi(a.gw + '–' + a.gl, 'Games', pct(a.gw, a.gw + a.gl) + ' won') + kpi(f1(a.al), 'Avg opponent level') + kpi(f1(a.ap), 'Avg performance') +
+    kpi(a.s3w + '–' + a.s3l, 'Three-set matches') + kpi(a.tbw + '–' + a.tbl, 'Tie-break sets') + kpi(st.best, 'Best win streak') + kpi(a.woW + a.woL, 'Walkovers', a.woW + 'W / ' + a.woL + 'L (included)', 'wo') + '</div>' +
+    (state.lt === 'all' ? '<h2>Ladder <small>by league level' + (state.ly === 'all' ? ', all years' : ', ' + state.ly) + '</small></h2>' + compRows(L) : '') +
+    '<h2>Seasons <small>newest first</small></h2>' + table([{ t: 'Season' }, { t: 'Period' }, { t: 'P', n: 1 }, { t: 'W', n: 1 }, { t: 'L', n: 1 }, { t: 'Win %', n: 1 }, { t: '' }, { t: 'Sets', n: 1 }, { t: 'Games', n: 1 }, { t: 'Avg opp', n: 1 }, { t: 'Avg perf', n: 1 }, { t: 'WO', n: 1 }], sRows) +
+    '<div class="grid g2"><div><h2>Opponents <small>' + Object.keys(mp).length + ' players</small></h2>' + table([{ t: 'Opponent' }, { t: 'P', n: 1 }, { t: 'W', n: 1 }, { t: 'L', n: 1 }, { t: 'Win %', n: 1 }, { t: '' }, { t: 'Sets', n: 1 }, { t: 'Results' }], oRows) + '</div>' +
+    '<div><h2>Win rate by opponent level</h2><div class="card">' + barRows([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => { const x = agg(L.filter(m => m.lvl === i)); return x.p ? { label: 'Level ' + i, v: 100 * x.w / x.p, right: x.w + 'W ' + x.l + 'L · ' + pct(x.w, x.p) } : null; }).filter(Boolean)) + '</div></div></div>' +
+    '<h2>Matches <small>' + L.length + ', newest first</small></h2>' + matchTable(L.slice().reverse());
+}
+function pageLeagues() {
+  if (!state.lt) state.lt = 'all';
+  if (!state.ly) state.ly = 'all';
+  return '<h1>Leagues</h1><p class="sub">League matches only (no friendlies). Choose the league and the year. Walkovers are included and tagged.</p>' +
+    '<div class="filters"><label>League<div class="pills">' + LTYPES.map(t => '<span class="pill ' + (state.lt === t[0] ? 'on' : '') + '" data-lt="' + t[0] + '">' + t[1] + '</span>').join('') + '</div></label>' +
+    '<label>Year<div class="pills">' + ['all'].concat(LYEARS).map(y => '<span class="pill ' + (state.ly === y ? 'on' : '') + '" data-ly="' + y + '">' + (y === 'all' ? 'All' : y) + '</span>').join('') + '</div></label></div>' +
+    leaguesBody();
 }
 
 /* ---------------------------------------------------------------- tournaments */
 function eventCard(e) {
   const keep = [0, 1, 2, 3, 4, 5].filter(c => e.rows.some(r => r[c] != null && r[c] !== ''));
   const rows = e.rows.filter(r => keep.some(c => r[c] != null && r[c] !== ''));
-  const cell = v => { if (v == null || v === '') return '<td></td>'; if (v === 'W' || v === 'L') return '<td>' + badge(v) + '</td>'; return '<td' + (typeof v === 'string' && isMe(v) ? ' style="color:var(--accent);font-weight:700"' : '') + '>' + esc(v) + '</td>'; };
+  const cell = v => { if (v == null || v === '') return '<td></td>'; if (v === 'W' || v === 'L') return '<td>' + badge(v) + '</td>'; return '<td' + (typeof v === 'string' && isMe(v) ? ' style="background:#eef6c8;color:var(--navy);font-weight:800"' : '') + '>' + esc(v) + '</td>'; };
   const head = rows.length && rows[0].filter(x => typeof x === 'string').length >= 3 && rows[0].some(x => /player/i.test(String(x)));
   return '<div class="card" style="margin-bottom:12px"><b>' + esc(e.name) + '</b> <span class="muted">' + e.year + '</span><div class="tablewrap grid-ev" style="margin-top:8px"><table>' +
     rows.map((r, i) => '<tr' + (head && i === 0 ? ' style="color:var(--muted);font-weight:700"' : '') + '>' + keep.map(c => cell(r[c])).join('') + '</tr>').join('') + '</table></div></div>';
 }
+const IT_MON = { gennaio: [1, 'January'], febbraio: [2, 'February'], marzo: [3, 'March'], aprile: [4, 'April'], maggio: [5, 'May'], giugno: [6, 'June'], luglio: [7, 'July'], agosto: [8, 'August'],
+  settembre: [9, 'September'], ottobre: [10, 'October'], novembre: [11, 'November'], dicembre: [12, 'December'], primavera: [4, 'Spring'], estate: [7, 'Summer'], autunno: [10, 'Autumn'], inverno: [12, 'Winter'] };
+function trophy(e) {
+  const parts = e.name.split(/\s+-\s+/), when = IT_MON[(parts[0] || '').trim().toLowerCase()] || [0, parts[0]];
+  let what = parts.slice(1).join(' - ') || e.name;
+  const pm = what.match(/(\d)\s*°\s*posto/i), place = pm ? +pm[1] : 1;
+  what = what.replace(/(\d)\s*°\s*posto/i, '').replace(/(\d)\s*\*\s*Liga/i, '$1° League').replace(/Doppio/i, 'Doubles').replace(/Consolazione/i, 'Consolation')
+    .replace(/Winter league/i, 'Winter League').replace(/^Nitra$/i, 'Nitra tournament').trim();
+  const type = /doubles/i.test(what) ? 'Doubles' : /league/i.test(what) ? 'League' : /consolation/i.test(what) ? 'Consolation' : 'Tournament';
+  return { e, month: when[0], when: when[1] + ' ' + e.year, what, place, type };
+}
+const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
+const PLACE = p => p === 1 ? 'Winner' : p === 2 ? '2nd place' : p === 3 ? '3rd place' : p + 'th place';
 function pageTournaments() {
-  const ev = D.events.slice().sort((a, b) => b.year - a.year);
-  return '<h1>Tournaments & results</h1><p class="sub">Brackets, consolation rounds, doubles and league finals recorded in the workbook.</p><div class="grid g2">' + ev.map(eventCard).join('') + '</div>';
+  const T = D.events.map(trophy).sort((a, b) => b.e.year - a.e.year || b.month - a.month);
+  const c = p => T.filter(t => t.place === p).length;
+  const types = {}; T.forEach(t => types[t.type] = (types[t.type] || 0) + 1);
+  return '<h1>Trophies</h1><p class="sub">My podium finishes: tournaments, consolation draws, doubles and leagues. Newest first.</p>' +
+    '<div class="grid kpis">' + kpi(T.length, 'Podiums') + kpi('🥇 ' + c(1), 'Wins') + kpi('🥈 ' + c(2), '2nd places') + kpi('🥉 ' + c(3), '3rd places') +
+    Object.keys(types).map(k => kpi(types[k], k)).join('') + '</div>' +
+    '<h2>All trophies</h2><div class="grid g2">' + T.map(t =>
+      '<div class="card" style="border-top:3px solid ' + (t.place === 1 ? '#d4af37' : t.place === 2 ? '#a0a9b6' : '#c27c3e') + '">' +
+      '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:34px;line-height:1">' + (MEDAL[t.place] || '🏅') + '</div>' +
+      '<div><div style="font-size:16px;font-weight:800;color:var(--navy)">' + esc(t.what) + '</div><div class="muted">' + esc(t.when) + ' · <b>' + PLACE(t.place) + '</b> · ' + t.type + '</div></div></div>' +
+      eventCard(t.e).replace(/^<div class="card" style="margin-bottom:12px"><b>.*?<\/span>/, '<div style="margin-top:8px">') + '</div>').join('') + '</div>';
 }
 
 /* ---------------------------------------------------------------- next matches */
@@ -376,10 +421,12 @@ function pageDev() {
 }
 
 /* ---------------------------------------------------------------- router */
-const NAV = [['overview', 'Overview'], ['matches', 'Matches'], ['players', 'Players'], ['stats', 'Statistics'], ['ranking', 'Ranking'], ['leagues', 'Leagues'], ['tournaments', 'Tournaments'], ['next', 'Next matches'], ['development', 'Development']];
+const NAV = [['overview', 'Overview'], ['matches', 'Matches'], ['players', 'Players'], ['stats', 'Statistics'], ['ranking', 'Ranking'], ['leagues', 'Leagues'], ['tournaments', 'Trophies'], ['next', 'Next matches'], ['development', 'Development']];
 const PAGES = { overview: pageOverview, matches: pageMatches, players: pagePlayers, stats: pageStats, ranking: pageRanking, leagues: pageLeagues, tournaments: pageTournaments, next: pageNext, development: pageDev };
 function route() {
-  const p = (location.hash || '#/overview').replace(/^#\/?/, '').split('/');
+  const hq = (location.hash || '').split('?');
+  if (hq[1]) { const sp = new URLSearchParams(hq[1]); ['lt', 'ly', 'year', 'cat', 'ry'].forEach(k => { if (sp.get(k)) state[k] = sp.get(k); }); }
+  const p = (hq[0] || '#/overview').replace(/^#\/?/, '').split('/');
   const name = p[0] || 'overview';
   const html = name === 'player' ? pagePlayer(decodeURIComponent(p.slice(1).join('/'))) : (PAGES[name] || pageOverview)();
   $('#nav').innerHTML = NAV.map(n => '<a href="#/' + n[0] + '" class="' + (n[0] === name || (name === 'player' && n[0] === 'players') ? 'on' : '') + '">' + n[1] + '</a>').join('');
@@ -390,7 +437,9 @@ function route() {
 function rerender() { const y = window.scrollY; route(); window.scrollTo(0, y); }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-year],[data-ry],[data-sort]'); if (!t) return;
+  const t = e.target.closest('[data-year],[data-ry],[data-sort],[data-lt],[data-ly]'); if (!t) return;
+  if (t.dataset.lt) { state.lt = t.dataset.lt; rerender(); return; }
+  if (t.dataset.ly) { state.ly = t.dataset.ly; rerender(); return; }
   if (t.dataset.year) { state.year = t.dataset.year; rerender(); }
   else if (t.dataset.ry) { state.ry = t.dataset.ry; rerender(); }
   else if (t.dataset.sort) { const k = t.dataset.sort; state.sort = { key: k, dir: state.sort.key === k ? -state.sort.dir : (k === 'n' ? 1 : -1) }; $('#tbl').innerHTML = playersBody(); }
