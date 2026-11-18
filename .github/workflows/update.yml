@@ -28,26 +28,73 @@ jobs:
       - name: Download the Excel from OneDrive
         env:
           EXCEL_URL: ${{ secrets.EXCEL_URL }}
+        shell: python
         run: |
-          test -n "$EXCEL_URL" || { echo "Secret EXCEL_URL is missing"; exit 1; }
-          # accept a plain link or the whole <iframe ...> embed code
-          SRC=$(printf '%s' "$EXCEL_URL" | grep -o 'src="[^"]*"' | head -1 | sed 's/^src="//; s/"$//; s/&amp;/\&/g')
-          [ -n "$SRC" ] && EXCEL_URL="$SRC"
-          EXCEL_URL=$(printf '%s' "$EXCEL_URL" | tr -d '[:space:]')
-          DL=$(printf '%s' "$EXCEL_URL" | sed 's#/embed?#/download?#')
-          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-          try() { rm -f T-Report.xlsx; curl -sSL -A "$UA" -o T-Report.xlsx -w "http=%{http_code} " "$1" || true; head -c 2 T-Report.xlsx 2>/dev/null | grep -q PK; }
-          ENC=$(printf '%s' "$EXCEL_URL" | base64 -w0 | tr '/+' '_-' | tr -d '=')
-          FINAL=$(curl -sSL -A "$UA" -o /dev/null -w '%{url_effective}' "$EXCEL_URL" || true)
-          case "$EXCEL_URL" in *\?*) SEP='&';; *) SEP='?';; esac
-          case "$FINAL" in *\?*) SEP2='&';; *) SEP2='?';; esac
-          echo "link host: $(echo "$EXCEL_URL" | cut -d/ -f3) -> $(echo "$FINAL" | cut -d/ -f3)"
-          try "$DL" \
-            || try "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content" \
-            || try "${EXCEL_URL}${SEP}download=1" \
-            || try "${FINAL}${SEP2}download=1" \
-            || { echo; echo "All download methods failed"; exit 1; }
-          echo "download ok"
+          import os, re, sys, json, base64, html, urllib.request, urllib.parse
+          raw = os.environ.get('EXCEL_URL', '').strip()
+          if not raw:
+              sys.exit('Secret EXCEL_URL is missing')
+          m = re.search(r'src="([^"]+)"', raw)
+          link = html.unescape(m.group(1) if m else raw).strip()
+          UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36'
+
+          def get(url, headers=None, data=None):
+              h = {'User-Agent': UA}
+              h.update(headers or {})
+              req = urllib.request.Request(url, data=data, headers=h)
+              try:
+                  r = urllib.request.urlopen(req, timeout=60)
+                  return r.status, r.geturl(), r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, url, b''
+              except Exception as e:
+                  return 0, url, b''
+
+          def enc(u):
+              return 'u!' + base64.urlsafe_b64encode(u.encode()).decode().rstrip('=')
+
+          st, final, body = get(link)
+          q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(final).query))
+          print('link host:', urllib.parse.urlparse(link).netloc, '->', urllib.parse.urlparse(final).netloc,
+                urllib.parse.urlparse(final).path, '| params:', sorted(q))
+
+          cands = []
+          if '/embed' in final:
+              cands.append(('final embed->download', final.replace('/embed', '/download', 1), {}))
+          if '/embed' in link:
+              cands.append(('link embed->download', link.replace('/embed', '/download', 1), {}))
+          if q.get('resid'):
+              p = {'resid': q['resid']}
+              for k in ('cid', 'authkey'):
+                  if q.get(k): p[k] = q[k]
+              cands.append(('resid download', 'https://onedrive.live.com/download?' + urllib.parse.urlencode(p), {}))
+          # anonymous "badger" token, used for the new 1drv.ms/x/c/... links
+          tok = None
+          s2, _, b2 = get('https://api-badgerp.svc.ms/v1.0/token',
+                          {'Content-Type': 'application/json'},
+                          json.dumps({'appId': '5cbed6ac-a083-4e14-b191-b4ba07653de2'}).encode())
+          try:
+              tok = json.loads(b2).get('token')
+          except Exception:
+              pass
+          print('badger token:', 'ok' if tok else 'failed (%s)' % s2)
+          for u in dict.fromkeys([link.split('?')[0], link, final]):
+              if tok:
+                  cands.append(('badger', 'https://my.microsoftpersonalcontent.com/_api/v2.0/shares/%s/driveitem/content' % enc(u),
+                                {'Authorization': 'Badger ' + tok, 'Prefer': 'autoredeem'}))
+              cands.append(('api.onedrive', 'https://api.onedrive.com/v1.0/shares/%s/root/content' % enc(u), {}))
+          sep = '&' if '?' in link else '?'
+          cands.append(('download=1', link + sep + 'download=1', {}))
+
+          for name, url, hdr in cands:
+              st, _, data = get(url, hdr)
+              ok = data[:2] == b'PK'
+              print('%-22s http=%s bytes=%s %s' % (name, st, len(data), 'OK' if ok else ''))
+              if ok:
+                  open('T-Report.xlsx', 'wb').write(data)
+                  print('download ok')
+                  sys.exit(0)
+          sys.exit('All download methods failed')
       - name: Build data.js
         run: python build_data.py T-Report.xlsx
       - name: Collect site files
