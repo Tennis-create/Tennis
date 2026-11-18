@@ -1,0 +1,54 @@
+name: Update site from OneDrive Excel
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl
+      - name: Download the Excel from OneDrive
+        env:
+          EXCEL_URL: ${{ secrets.EXCEL_URL }}
+        run: |
+          test -n "$EXCEL_URL" || { echo "Secret EXCEL_URL is missing"; exit 1; }
+          ENC=$(printf '%s' "$EXCEL_URL" | base64 -w0 | tr '/+' '_-' | tr -d '=')
+          curl -fsSL -o T-Report.xlsx "https://api.onedrive.com/v1.0/shares/u!${ENC}/root/content"
+          head -c 2 T-Report.xlsx | grep -q PK || { echo "Downloaded file is not an xlsx"; exit 1; }
+      - name: Build data.js
+        run: python build_data.py T-Report.xlsx
+      - name: Collect site files
+        run: |
+          mkdir _site
+          cp index.html style.css app.js data.js _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4
